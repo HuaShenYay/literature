@@ -29,7 +29,7 @@ export async function generateDailyContent(config: AIConfig): Promise<DailyData>
   };
 
   // 调用 AI API 生成内容
-  async function generateContent(config: AIConfig, prompt: string): Promise<ContentItem> {
+  async function generateContent(config: AIConfig, prompt: string): Promise<ContentItem | ReviewContent> { // Allow returning either ContentItem or ReviewContent
     // 使用官方文档中的 API 地址
     const endpoint = 'https://api.siliconflow.cn/v1/chat/completions';
     const method = 'POST';
@@ -129,20 +129,42 @@ export async function generateDailyContent(config: AIConfig): Promise<DailyData>
 
         try {
           // Parse the extracted JSON string
-          const parsedContent: ContentItem = JSON.parse(jsonString);
-          console.log("Parsed AI content:", parsedContent); // Log parsed content
+          const parsedContent: any = JSON.parse(jsonString); // Use any temporarily for flexible access
+          console.log("Parsed AI content (raw):", parsedContent); // Log raw parsed content
 
-          // Validate parsed content structure - ensure it has title and content
-          if (typeof parsedContent.title !== 'string' || typeof parsedContent.content !== 'string') {
-             throw new Error("AI response format is incorrect: missing title or content.");
+          let validatedContent: ContentItem | ReviewContent;
+
+          // Validate parsed content structure based on prompt type
+          if (prompt === prompts.review) {
+            // Expecting ReviewContent structure
+            if (typeof parsedContent.review_title !== 'string' || typeof parsedContent.review_content !== 'string') {
+              throw new Error("AI response format is incorrect for review: missing review_title or review_content.");
+            }
+            // Map to ReviewContent structure for consistency downstream
+            validatedContent = {
+                title: parsedContent.review_title,
+                content: parsedContent.review_content,
+                author: parsedContent.review_author,
+                tag: parsedContent.review_tag,
+                source: parsedContent.review_source
+            } as ReviewContent;
+          } else {
+            // Expecting ContentItem structure for concept and question
+            if (typeof parsedContent.title !== 'string' || typeof parsedContent.content !== 'string') {
+               throw new Error("AI response format is incorrect: missing title or content.");
+            }
+            validatedContent = parsedContent as ContentItem; // Cast to ContentItem
           }
 
-          return parsedContent;
+          console.log("Validated AI content:", validatedContent); // Log validated content
+
+          return validatedContent;
+
         } catch (parseError: unknown) {
-           console.error("Failed to parse AI response JSON:", jsonString, parseError);
+           console.error("Failed to parse or validate AI response JSON:", jsonString, parseError);
            const rawTextSnippet = generatedText.substring(0, Math.min(generatedText.length, 200));
 
-           let parseErrorMessage = "Unknown parsing error.";
+           let parseErrorMessage = "Unknown parsing or validation error.";
            if (parseError instanceof Error) {
              parseErrorMessage = parseError.message;
            } else if (typeof parseError === 'object' && parseError !== null) {
@@ -175,7 +197,9 @@ export async function generateDailyContent(config: AIConfig): Promise<DailyData>
         error.message.includes('超时') ||
         error.message.includes('无法连接到API服务器') ||
         error.message.includes('服务暂时不可用') ||
-        error.message.includes('服务响应超时')
+        error.message.includes('服务响应超时') ||
+        // Retry on parsing errors as the AI might return incorrect format sometimes
+        error.message.includes('Failed to parse AI response')
       )) {
         console.log('Retrying API call...');
         // 等待1秒后重试
@@ -190,7 +214,7 @@ export async function generateDailyContent(config: AIConfig): Promise<DailyData>
 
   try {
     // 并行生成所有内容
-    const [review, concept, question] = await Promise.all([
+    const [reviewResult, conceptResult, questionResult] = await Promise.all([
       generateContent(config, prompts.review), // Pass config
       generateContent(config, prompts.concept), // Pass config
       generateContent(config, prompts.question) // Pass config
@@ -206,9 +230,9 @@ export async function generateDailyContent(config: AIConfig): Promise<DailyData>
       today: {
         date: todayDate,
         // review, concept, and question are already ContentItem or ReviewContent from generateContent
-        review: review as ReviewContent, // Cast review to ReviewContent as it might have extra fields
-        concept: concept,
-        question: question
+        review: reviewResult as ReviewContent, // Cast reviewResult to ReviewContent
+        concept: conceptResult as ContentItem, // Cast conceptResult to ContentItem
+        question: questionResult as ContentItem // Cast questionResult to ContentItem
       },
       yesterday: {
         date: yesterdayDate,
