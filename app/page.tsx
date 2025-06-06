@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { ContentItem, DailyContent, DailyData, ActiveSection, ReviewContent } from '@/app/types/types';
 
-const CARD_WIDTH = 320; // Approximate card width in pixels (tailwind w-80 is 320px)
-const CARD_MARGIN_RIGHT = 16; // Approximate margin between cards (tailwind mr-4 is 16px)
+// Removed fixed CARD_WIDTH and CARD_MARGIN_RIGHT as we will use responsive design
+// const CARD_WIDTH = 320; // Approximate card width in pixels (tailwind w-80 is 320px)
+// const CARD_MARGIN_RIGHT = 16; // Approximate margin between cards (tailwind mr-4 is 16px)
+
 // Removed DRAG_THRESHOLD and SNAP_TRANSITION_DURATION
 
 // 浮动窗口组件
@@ -86,6 +88,7 @@ export default function Home() {
   const [currentTranslateX, setCurrentTranslateX] = useState(0);
   const [previousTranslateX, setPreviousTranslateX] = useState(0);
   const cardContainerRef = useRef<HTMLDivElement>(null); // Ref for the card container
+  const mainContentRef = useRef<HTMLElement>(null); // Ref for the main content area
 
   // Fetch data from the API on component mount
   useEffect(() => {
@@ -111,7 +114,8 @@ export default function Home() {
   // Handle drag logic
   useEffect(() => {
     const cardContainer = cardContainerRef.current;
-    if (!cardContainer) return;
+    const mainContent = mainContentRef.current;
+    if (!cardContainer || !mainContent) return;
 
     // Add CSS class for smooth transition only when not dragging
     cardContainer.style.transition = isDragging ? 'none' : 'transform 0.3s ease-in-out';
@@ -155,17 +159,22 @@ export default function Home() {
 
       // Determine target position based on drag direction and threshold
       let targetTranslateX = previousTranslateX;
-      // Use a percentage of the container width or screen width for threshold on mobile
-      const containerWidth = cardContainer.offsetWidth;
-      const switchThreshold = containerWidth > 640 ? CARD_WIDTH / 4 : containerWidth / 8; // Smaller threshold for mobile
+      // Use a percentage of the main content width for threshold
+      const mainContentWidth = mainContent.offsetWidth;
+      const switchThreshold = mainContentWidth / 4; // Use a quarter of the visible width as threshold
+
+      // Calculate card width dynamically for positioning
+      const cardElement = cardContainer.querySelector('.day-card');
+      const cardWidth = (cardElement instanceof HTMLElement) ? cardElement.offsetWidth : 280; // Adjusted default card width slightly smaller
+      const cardMarginRight = (cardElement instanceof HTMLElement && cardElement) ? parseFloat(getComputedStyle(cardElement).marginRight) : 16; // Default to 16
 
       if (dragDistance > switchThreshold && !displayToday) { // Dragged right from yesterday to today
         targetTranslateX = 0; // Position for today
         setDisplayToday(true);
       } else if (dragDistance < -switchThreshold && displayToday) { // Dragged left from today to yesterday
         // Calculate target position dynamically based on card and margin width
-        const cardAndMarginWidth = CARD_WIDTH + CARD_MARGIN_RIGHT;
-        targetTranslateX = -(cardAndMarginWidth); // Position for yesterday
+        const cardAndMarginWidth = cardWidth + cardMarginRight;
+        targetTranslateX = -(cardAndMarginWidth);
         setDisplayToday(false);
       } else {
          // Snap back to the original position if drag threshold not met
@@ -183,15 +192,20 @@ export default function Home() {
 
         // Determine target position based on drag direction and threshold
         let targetTranslateX = previousTranslateX;
-        const containerWidth = cardContainer.offsetWidth;
-        const switchThreshold = containerWidth > 640 ? CARD_WIDTH / 4 : containerWidth / 8; // Smaller threshold for mobile
+        const mainContentWidth = mainContent.offsetWidth;
+        const switchThreshold = mainContentWidth / 4;
+
+        // Calculate card width dynamically for positioning
+        const cardElement = cardContainer.querySelector('.day-card');
+        const cardWidth = (cardElement instanceof HTMLElement) ? cardElement.offsetWidth : 280; // Adjusted default card width slightly smaller
+        const cardMarginRight = (cardElement instanceof HTMLElement && cardElement) ? parseFloat(getComputedStyle(cardElement).marginRight) : 16; // Default to 16
 
         if (dragDistance > switchThreshold && !displayToday) { // Dragged right from yesterday to today
             targetTranslateX = 0; // Position for today
             setDisplayToday(true);
         } else if (dragDistance < -switchThreshold && displayToday) {
             // Calculate target position dynamically based on card and margin width
-            const cardAndMarginWidth = CARD_WIDTH + CARD_MARGIN_RIGHT;
+            const cardAndMarginWidth = cardWidth + cardMarginRight;
             targetTranslateX = -(cardAndMarginWidth);
             setDisplayToday(false);
         } else {
@@ -230,7 +244,11 @@ export default function Home() {
   useEffect(() => {
     const cardContainer = cardContainerRef.current;
     if (cardContainer) {
-      const targetTranslateX = displayToday ? 0 : -(CARD_WIDTH + CARD_MARGIN_RIGHT);
+      // Calculate targetTranslateX dynamically based on potential mobile card width
+      const cardElement = cardContainer.querySelector('.day-card');
+      const cardWidth = (cardElement instanceof HTMLElement) ? cardElement.offsetWidth : 280; // Adjusted default card width slightly smaller
+      const cardMarginRight = (cardElement instanceof HTMLElement && cardElement) ? parseFloat(getComputedStyle(cardElement).marginRight) : 16;
+      const targetTranslateX = displayToday ? 0 : -(cardWidth + cardMarginRight);
        // No need to set transition here, handled by drag useEffect
       setCurrentTranslateX(targetTranslateX);
     }
@@ -245,7 +263,7 @@ export default function Home() {
     }, [currentTranslateX]);
 
   // Handle content click (only effective on the current card)
-  const handleContentClick = (content: ContentItem | ReviewContent) => { // Allow ReviewContent
+  const handleContentClick = (content: ContentItem | ReviewContent) => {
     setSelectedContent(content);
     setIsModalOpen(true);
   };
@@ -285,12 +303,15 @@ export default function Home() {
 
     return (
       <div
-        className={`flex-none w-80 bg-white rounded-xl shadow-lg p-6 flex flex-col transition-all duration-300 mr-4 ${
+        // Use responsive classes for width and margin
+        // Reduced max-w-sm to max-w-xs for potentially smaller card on mobile
+        className={`day-card flex-none w-full max-w-xs md:max-w-sm lg:w-80 bg-white rounded-xl shadow-lg p-6 flex flex-col transition-all duration-300 mr-4 ${
           isCurrentCard
             ? 'transform scale-100 shadow-xl z-10' // Added z-index to current card
-            : 'transform scale-95' // Removed cursor-pointer and hover effect as click is now drag/content based
+            : 'transform scale-95'
         }`}
-        style={{ width: CARD_WIDTH + 'px' }} // Explicitly set card width
+        // Removed explicit style width
+        // style={{ width: CARD_WIDTH + 'px' }} // Explicitly set card width
         // Removed onClick handler from the card itself
         // onClick={() => handleCardClick(isToday)} 
       >
@@ -333,61 +354,66 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4 overflow-hidden"> {/* Added overflow-hidden */}
+    // Added horizontal padding on small screens
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-start px-2 py-4 overflow-x-hidden sm:px-4 md:px-6 lg:px-8"> {/* Changed justify-center to justify-start, Added overflow-x-hidden, Added responsive padding */}
       <header className="w-full max-w-4xl mx-auto text-center py-8">
-        <h1 className="text-4xl font-extrabold text-gray-800 mb-4">文学助手</h1>
-        <p className="text-xl text-gray-600">每日为你呈现精选文学内容</p>
+        <h1 className="text-4xl font-extrabold text-gray-800 mb-4">文学考研学习助手</h1>
+        <p className="text-xl text-gray-600">每日更新 由@Meso制作</p>
       </header>
 
-      <main className="flex-grow w-full flex justify-center items-center py-8 overflow-hidden"> {/* Added overflow-hidden */}
-        <div
-          ref={cardContainerRef}
-          className="flex cursor-grab active:cursor-grabbing" // Added cursor styles
-          style={{
-            transform: `translateX(${currentTranslateX}px)`,
-            // transition: 'transform 0.3s ease-in-out', // Removed, handled by useEffect
-          }}
-        >
-          {/* Yesterday's Card */}
-          {renderDayCard(dailyData.yesterday, false)}
+      {/* Added a wrapper div for horizontal scrolling on mobile */}
+      {/* Added horizontal padding here as well for consistent spacing */}
+      <div className="w-full overflow-x-auto custom-scrollbar px-2 sm:px-4 md:px-6 lg:px-8"> {/* Added custom-scrollbar class for potential styling, Added responsive padding */}
+          <main ref={mainContentRef} className="flex w-max mx-auto py-8"> {/* Added ref, w-max to prevent wrapping, and mx-auto for centering */} {/* Removed overflow-hidden */}
+            <div
+              ref={cardContainerRef}
+              className="flex cursor-grab active:cursor-grabbing"
+              style={{
+                transform: `translateX(${currentTranslateX}px)`,
+                // transition: 'transform 0.3s ease-in-out', // Removed, handled by useEffect
+              }}
+            >
+              {/* Yesterday's Card */}
+              {dailyData.yesterday && renderDayCard(dailyData.yesterday, false)}
 
-          {/* Today's Card */}
-          {renderDayCard(dailyData.today, true)}
-        </div>
-      </main>
+              {/* Today's Card */}
+              {dailyData.today && renderDayCard(dailyData.today, true)}
+            </div>
+          </main>
+      </div>
 
        {/* Floating Button Container with solid white background */}
-      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-20 bg-white rounded-full shadow-lg p-2"> {/* Added bg-white and padding */}
-          <div className="flex space-x-2 md:space-x-4"> {/* Increased spacing for larger screens */}
+      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-20 bg-white rounded-full shadow-lg p-2"> {/* Adjusted bottom spacing, added bg-white and padding */}
+          <div className="flex space-x-2 md:space-x-4 justify-center"> {/* Added justify-center */} {/* Increased spacing for larger screens */}
               <button
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
+                className={`px-3 py-1 md:px-4 md:py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
                   activeSection === 'review'
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-700 hover:bg-gray-200'
                 }`}
                 onClick={() => handleTabClick('review')}
               >
-                文学评论
+                评论
               </button>
               <button
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
+                className={`px-3 py-1 md:px-4 md:py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
                   activeSection === 'concept'
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-700 hover:bg-gray-200'
                 }`}
                 onClick={() => handleTabClick('concept')}
               >
-                概念解析
+                概念
               </button>
               <button
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
+                className={`px-3 py-1 md:px-4 md:py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
                   activeSection === 'question'
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-700 hover:bg-gray-200'
                 }`}
                 onClick={() => handleTabClick('question')}
               >
-                考研题目
+                题目
               </button>
           </div>
       </div>

@@ -3,29 +3,34 @@ import { ContentItem, DailyData, AIConfig, ReviewContent } from '@/app/types/typ
 // Moved AIConfig interface here for consistency after creating types file
 export type { AIConfig };
 
-// 生成不同类型的内容
-export async function generateDailyContent(config: AIConfig): Promise<DailyData> {
-  const prompts = {
-    review: `请生成一篇关于某部经典文学作品的评论，要求：
+// 定义用于生成不同类型内容的提示词
+const REVIEW_PROMPT = `请生成一篇关于某部经典文学作品的评论，要求：
 - 评论标题
 - 评论内容（500字左右）
 - 评论作者（虚构名称）
 - 可以包含标签（例如：#经典 #文学评论）
 - 可以包含出处（例如：摘自《读书杂志》某年某期）
-请以JSON格式返回，包含review_title, review_content, review_author, review_tag, review_source字段。`,
+请以JSON格式返回，包含review_title, review_content, review_author, review_tag, review_source字段。`;
 
-    concept: `请解释一个文学概念或术语，要求：
+const CONCEPT_PROMPT = `请解释一个文学概念或术语，要求：
 - 概念名称作为标题
 - 简明扼要的解释（150字左右）
 - 可以包含具体的文学例子
 - 解释要准确且易于理解
-请以JSON格式返回，包含title和content字段。`,
+请以JSON格式返回，包含title和content字段。`;
 
-    question: `请生成一道文学考研题目，要求：
+const QUESTION_PROMPT = `请生成一道文学考研题目，要求：
 - 题目要符合考研难度
 - 包含具体的分析要求
 - 题目要有一定的深度和学术性
-请以JSON格式返回，包含title和content字段。`
+请以JSON格式返回，包含title和content字段。`;
+
+// 生成不同类型的内容
+export async function generateDailyContent(config: AIConfig): Promise<DailyData> {
+  const prompts = {
+    review: REVIEW_PROMPT,
+    concept: CONCEPT_PROMPT,
+    question: QUESTION_PROMPT,
   };
 
   // 调用 AI API 生成内容
@@ -135,7 +140,7 @@ export async function generateDailyContent(config: AIConfig): Promise<DailyData>
           let validatedContent: ContentItem | ReviewContent;
 
           // Validate parsed content structure based on prompt type
-          if (prompt === prompts.review) {
+          if (prompt === REVIEW_PROMPT) { // Use constant for comparison
             // Expecting ReviewContent structure
             if (typeof parsedContent.review_title !== 'string' || typeof parsedContent.review_content !== 'string') {
               throw new Error("AI response format is incorrect for review: missing review_title or review_content.");
@@ -148,9 +153,9 @@ export async function generateDailyContent(config: AIConfig): Promise<DailyData>
                 tag: parsedContent.review_tag,
                 source: parsedContent.review_source
             } as ReviewContent;
-          } else {
+          } else { // For concept and question, use constants for comparison
             // Expecting ContentItem structure for concept and question
-            if (typeof parsedContent.title !== 'string' || typeof parsedContent.content !== 'string') {
+             if (typeof parsedContent.title !== 'string' || typeof parsedContent.content !== 'string') {
                throw new Error("AI response format is incorrect: missing title or content.");
             }
             validatedContent = parsedContent as ContentItem; // Cast to ContentItem
@@ -174,7 +179,11 @@ export async function generateDailyContent(config: AIConfig): Promise<DailyData>
              }
            }
 
-           throw new Error(`Failed to parse AI response: ${parseErrorMessage}. Raw snippet: ${rawTextSnippet}...`);
+           // Escape backticks in variables before inserting into template literal
+           const escapedParseErrorMessage = parseErrorMessage.replace(/`/g, '\\`');
+           const escapedRawTextSnippet = rawTextSnippet.replace(/`/g, '\\`');
+
+           throw new Error(`Failed to parse AI response: ${escapedParseErrorMessage}. Raw snippet: ${escapedRawTextSnippet}...`);
         }
 
       } catch (error) {

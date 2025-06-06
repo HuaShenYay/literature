@@ -2,21 +2,20 @@ import { generateDailyContent, AIConfig } from '@/app/utils/ai';
 import { createClient, SupabaseClient, PostgrestSingleResponse } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { DailyData } from '@/app/types/types';
+import { ReviewContent, ContentItem } from '@/app/types/types'; // Keep imports needed for data structure
 
 // Define a type for the structure fetched directly from the Supabase table
-interface DailyContentRow {
-    id: number;
-    created_at: string;
+interface DailyContentFromDB {
     date: string;
-    review_title: string;
-    review_content: string;
+    review_title: string | null;
+    review_content: string | null;
     review_author: string | null;
     review_tag: string | null;
     review_source: string | null;
-    concept_title: string;
-    concept_content: string;
-    question_title: string;
-    question_content: string;
+    concept_title: string | null;
+    concept_content: string | null;
+    question_title: string | null;
+    question_content: string | null;
 }
 
 // Initialize Supabase client (using Service Role Key for backend operations)
@@ -43,6 +42,8 @@ function validateAIConfig(): AIConfig {
   return { apiKey, modelId };
 }
 
+// Removed checkExistingContent function
+
 export async function GET() {
   try {
     const today = new Date();
@@ -51,44 +52,47 @@ export async function GET() {
     console.log(`Attempting to check for content for date: ${todayString}`);
 
     // Check if today's content already exists
-    const { data: todayData, error: fetchTodayError }: PostgrestSingleResponse<DailyContentRow> = await supabase
+    const { data: existingContent, error: fetchError } = await supabase
       .from('daily_content')
       .select('*')
       .eq('date', todayString)
       .single();
 
-    console.log("Check for today's content result:", { todayData, fetchTodayError });
+    console.log("Check for today's content result:", { existingContent, fetchError });
 
-    if (fetchTodayError && fetchTodayError.code !== 'PGRST116') { // PGRST116 means 'no rows found'
-        console.error("Error checking for today's content:", fetchTodayError);
-        throw new Error(`Database fetch error: ${fetchTodayError.message}`);
+    if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 means 'no rows found'
+        console.error("Error checking for today's content:", fetchError);
+        throw new Error(`Database fetch error: ${fetchError.message}`);
     }
 
-    if (todayData) {
+    if (existingContent) {
       console.log("Today's content already exists in DB. Generation skipped.");
       return NextResponse.json({ message: "Today's content already exists.", date: todayString }, { status: 200 });
     } else {
       console.log("Today's content not found. Generating new content...");
       const aiConfig = validateAIConfig();
-      const generatedContent: DailyData = await generateDailyContent(aiConfig);
-      console.log("AI generated content successfully.");
 
-      const contentToInsert: Omit<DailyContentRow, 'id' | 'created_at'> = {
+      // Generate all content types
+      const generatedDailyData = await generateDailyContent(aiConfig);
+      console.log("AI generated daily data successfully.", generatedDailyData);
+
+      // Prepare data for insertion (without deduplication checks)
+      const contentToInsert: Omit<DailyContentFromDB, 'id' | 'created_at'> = {
         date: todayString,
-        review_title: generatedContent.today.review.title,
-        review_content: generatedContent.today.review.content,
-        review_author: generatedContent.today.review.author || null,
-        review_tag: generatedContent.today.review.tag || null,
-        review_source: generatedContent.today.review.source || null,
-        concept_title: generatedContent.today.concept.title,
-        concept_content: generatedContent.today.concept.content,
-        question_title: generatedContent.today.question.title,
-        question_content: generatedContent.today.question.content,
+        review_title: generatedDailyData.today.review.title || null,
+        review_content: generatedDailyData.today.review.content || null,
+        review_author: (generatedDailyData.today.review as ReviewContent).author || null,
+        review_tag: (generatedDailyData.today.review as ReviewContent).tag || null,
+        review_source: (generatedDailyData.today.review as ReviewContent).source || null,
+        concept_title: generatedDailyData.today.concept.title || null,
+        concept_content: generatedDailyData.today.concept.content || null,
+        question_title: generatedDailyData.today.question.title || null,
+        question_content: generatedDailyData.today.question.content || null,
       };
 
       console.log("Attempting to insert content:", contentToInsert);
 
-      const { data: insertedData, error: insertError }: PostgrestSingleResponse<null> = await supabase
+      const { data: insertedData, error: insertError } = await supabase
         .from('daily_content')
         .insert([contentToInsert]);
 
