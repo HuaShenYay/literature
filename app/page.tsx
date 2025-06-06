@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { ContentItem, DailyContent, DailyData, ActiveSection } from '@/app/types/types';
+import { ContentItem, DailyContent, DailyData, ActiveSection, ReviewContent } from '@/app/types/types';
 
 const CARD_WIDTH = 320; // Approximate card width in pixels (tailwind w-80 is 320px)
 const CARD_MARGIN_RIGHT = 16; // Approximate margin between cards (tailwind mr-4 is 16px)
@@ -15,9 +15,18 @@ function DetailModal({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  content: ContentItem;
+  content: ContentItem | ReviewContent;
 }) {
   if (!isOpen) return null;
+
+  // Handle different content structures (ContentItem vs ReviewContent)
+  const title = (content as any).title || (content as any).review_title;
+  const contentText = (content as any).content || (content as any).review_content;
+
+  if (!title || !contentText) {
+      console.error("Invalid content passed to DetailModal:", content);
+      return null; // Or display an error message in the modal
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -31,7 +40,7 @@ function DetailModal({
           <div className="flex items-center space-x-3">
             <div className="w-2 h-8 bg-blue-500 rounded-full"></div>
             <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent">
-              {content.title}
+              {title}
             </h2>
           </div>
           <button
@@ -47,7 +56,8 @@ function DetailModal({
         {/* 内容区域 */}
         <div className="p-8 overflow-y-auto flex-grow">
           <div className="prose prose-lg max-w-none leading-relaxed text-gray-700"> {/* Combined text styles */}
-            {content.content.split('\n').map((paragraph, index) => (
+            {/* Use contentText which now handles both title/content and review_title/review_content */}
+            {contentText.split('\n').map((paragraph: string, index: number) => (
               <p key={index} className="mb-6">
                 {paragraph}
               </p>
@@ -67,7 +77,7 @@ export default function Home() {
   const [activeSection, setActiveSection] = useState<ActiveSection>('review');
   const [dailyData, setDailyData] = useState<DailyData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
+  const [selectedContent, setSelectedContent] = useState<ContentItem | ReviewContent | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Drag states
@@ -103,18 +113,25 @@ export default function Home() {
     const cardContainer = cardContainerRef.current;
     if (!cardContainer) return;
 
+    // Add CSS class for smooth transition only when not dragging
+    cardContainer.style.transition = isDragging ? 'none' : 'transform 0.3s ease-in-out';
+
     const onMouseDown = (e: MouseEvent) => {
+      // Only start drag if clicking directly on the container, not a child element
+      if (e.target !== cardContainer) return;
       setIsDragging(true);
       setStartX(e.clientX);
       setPreviousTranslateX(currentTranslateX);
-      cardContainer.style.transition = 'none'; // Remove transition during drag
+      // cardContainer.style.transition = 'none'; // Removed, handled by useEffect
     };
 
     const onTouchStart = (e: TouchEvent) => {
+        // Only start drag if touching directly on the container
+        if (e.target !== cardContainer) return;
         setIsDragging(true);
         setStartX(e.touches[0].clientX);
         setPreviousTranslateX(currentTranslateX);
-        if (cardContainer) cardContainer.style.transition = 'none'; // Remove transition during drag
+        // if (cardContainer) cardContainer.style.transition = 'none'; // Removed, handled by useEffect
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -138,13 +155,17 @@ export default function Home() {
 
       // Determine target position based on drag direction and threshold
       let targetTranslateX = previousTranslateX;
-      const switchThreshold = CARD_WIDTH / 4; // Example threshold
+      // Use a percentage of the container width or screen width for threshold on mobile
+      const containerWidth = cardContainer.offsetWidth;
+      const switchThreshold = containerWidth > 640 ? CARD_WIDTH / 4 : containerWidth / 8; // Smaller threshold for mobile
 
       if (dragDistance > switchThreshold && !displayToday) { // Dragged right from yesterday to today
         targetTranslateX = 0; // Position for today
         setDisplayToday(true);
       } else if (dragDistance < -switchThreshold && displayToday) { // Dragged left from today to yesterday
-        targetTranslateX = -(CARD_WIDTH + CARD_MARGIN_RIGHT); // Position for yesterday
+        // Calculate target position dynamically based on card and margin width
+        const cardAndMarginWidth = CARD_WIDTH + CARD_MARGIN_RIGHT;
+        targetTranslateX = -(cardAndMarginWidth); // Position for yesterday
         setDisplayToday(false);
       } else {
          // Snap back to the original position if drag threshold not met
@@ -152,7 +173,7 @@ export default function Home() {
       }
 
       setCurrentTranslateX(targetTranslateX);
-      if (cardContainer) cardContainer.style.transition = 'transform 0.3s ease-in-out'; // Add transition back
+      // if (cardContainer) cardContainer.style.transition = 'transform 0.3s ease-in-out'; // Removed, handled by useEffect
     };
 
     const onTouchEnd = () => {
@@ -162,13 +183,16 @@ export default function Home() {
 
         // Determine target position based on drag direction and threshold
         let targetTranslateX = previousTranslateX;
-        const switchThreshold = CARD_WIDTH / 4; // Example threshold
+        const containerWidth = cardContainer.offsetWidth;
+        const switchThreshold = containerWidth > 640 ? CARD_WIDTH / 4 : containerWidth / 8; // Smaller threshold for mobile
 
         if (dragDistance > switchThreshold && !displayToday) { // Dragged right from yesterday to today
             targetTranslateX = 0; // Position for today
             setDisplayToday(true);
-        } else if (dragDistance < -switchThreshold && displayToday) { // Dragged left from today to yesterday
-            targetTranslateX = -(CARD_WIDTH + CARD_MARGIN_RIGHT); // Position for yesterday
+        } else if (dragDistance < -switchThreshold && displayToday) {
+            // Calculate target position dynamically based on card and margin width
+            const cardAndMarginWidth = CARD_WIDTH + CARD_MARGIN_RIGHT;
+            targetTranslateX = -(cardAndMarginWidth);
             setDisplayToday(false);
         } else {
            // Snap back to the original position if drag threshold not met
@@ -176,164 +200,206 @@ export default function Home() {
         }
 
         setCurrentTranslateX(targetTranslateX);
-        if (cardContainer) cardContainer.style.transition = 'transform 0.3s ease-in-out'; // Add transition back
+        // if (cardContainer) cardContainer.style.transition = 'transform 0.3s ease-in-out'; // Removed, handled by useEffect
     };
 
-    // Add event listeners
-    cardContainer.addEventListener('mousedown', onMouseDown);
-    cardContainer.addEventListener('touchstart', onTouchStart);
+    // Add event listeners to the specific container element
+    cardContainer.addEventListener('mousedown', onMouseDown as EventListener);
+    cardContainer.addEventListener('touchstart', onTouchStart as EventListener);
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('touchmove', onTouchMove);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('touchend', onTouchEnd);
+    // Add global event listeners for mouse move and up to ensure dragging works even if cursor leaves the container
+    window.addEventListener('mousemove', onMouseMove as EventListener);
+    window.addEventListener('mouseup', onMouseUp as EventListener);
+    // Add global touch event listeners
+    window.addEventListener('touchmove', onTouchMove as EventListener);
+    window.addEventListener('touchend', onTouchEnd as EventListener);
 
     // Cleanup event listeners
     return () => {
-      cardContainer.removeEventListener('mousedown', onMouseDown);
-      cardContainer.removeEventListener('touchstart', onTouchStart);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      window.removeEventListener('touchend', onTouchEnd);
+      cardContainer.removeEventListener('mousedown', onMouseDown as EventListener);
+      cardContainer.removeEventListener('touchstart', onTouchStart as EventListener);
+      window.removeEventListener('mousemove', onMouseMove as EventListener);
+      window.removeEventListener('mouseup', onMouseUp as EventListener);
+      window.removeEventListener('touchmove', onTouchMove as EventListener);
+      window.removeEventListener('touchend', onTouchEnd as EventListener);
     };
   }, [isDragging, startX, previousTranslateX, currentTranslateX, displayToday]); // Add dependencies
 
   // Update currentTranslateX when displayToday changes (for initial positioning or programmatic changes)
+  // Also update transform style when currentTranslateX changes
   useEffect(() => {
-    setCurrentTranslateX(displayToday ? 0 : -(CARD_WIDTH + CARD_MARGIN_RIGHT));
+    const cardContainer = cardContainerRef.current;
+    if (cardContainer) {
+      const targetTranslateX = displayToday ? 0 : -(CARD_WIDTH + CARD_MARGIN_RIGHT);
+       // No need to set transition here, handled by drag useEffect
+      setCurrentTranslateX(targetTranslateX);
+    }
   }, [displayToday]);
 
-  // 处理内容点击（仅在当前卡片有效）
-  const handleContentClick = (content: ContentItem) => {
+    // Apply transform style based on currentTranslateX
+    useEffect(() => {
+        const cardContainer = cardContainerRef.current;
+        if (cardContainer) {
+            cardContainer.style.transform = `translateX(${currentTranslateX}px)`;
+        }
+    }, [currentTranslateX]);
+
+  // Handle content click (only effective on the current card)
+  const handleContentClick = (content: ContentItem | ReviewContent) => { // Allow ReviewContent
     setSelectedContent(content);
     setIsModalOpen(true);
   };
 
-  // 渲染内容卡片（这部分只渲染内容，点击逻辑在外部处理）
-  const renderContentDisplay = (content: ContentItem) => (
-    <>
-      <h3 className="text-lg font-bold mb-2 line-clamp-1">{content.title}</h3>
-      <p className="text-gray-700 line-clamp-3">{content.content}</p>
-    </>
-  );
+  // Handle tab click to switch active section
+  const handleTabClick = (section: ActiveSection) => {
+      // Only update if the tab is not already active
+      if (activeSection !== section) {
+          setActiveSection(section);
+      }
+  };
 
-  // 渲染日期卡片
+  // Render content display within the card
+  const renderContentDisplay = (content: ContentItem | ReviewContent) => {
+    // Handle different content structures for display within the card preview
+    const title = (content as any).title || (content as any).review_title;
+    const contentText = (content as any).content || (content as any).review_content;
+
+    if (!title || !contentText) {
+        return <p>内容加载失败或格式错误。</p>;
+    }
+
+    return (
+      <>
+        <h3 className="text-lg font-bold mb-2 line-clamp-1">{title}</h3>
+        <p className="text-gray-700 line-clamp-3">{contentText}</p>
+      </>
+    );
+  };
+
+  // Render date card
   const renderDayCard = (content: DailyContent, isToday: boolean) => {
     const isCurrentCard = displayToday === isToday;
+
+    // Determine which section content to display based on activeSection state
+    const sectionContent = content ? content[activeSection] : null;
+
     return (
       <div
-        className={`flex-none w-80 bg-white rounded-xl shadow-lg p-6 flex flex-col transition-all duration-300 ${
+        className={`flex-none w-80 bg-white rounded-xl shadow-lg p-6 flex flex-col transition-all duration-300 mr-4 ${
           isCurrentCard
             ? 'transform scale-100 shadow-xl z-10' // Added z-index to current card
             : 'transform scale-95' // Removed cursor-pointer and hover effect as click is now drag/content based
         }`}
+        style={{ width: CARD_WIDTH + 'px' }} // Explicitly set card width
         // Removed onClick handler from the card itself
         // onClick={() => handleCardClick(isToday)} 
       >
         <div className="text-right text-sm text-gray-500 mb-4">{content.date}</div>
         {/* 内容区域的点击事件 */}
-        <div
-          className={
-            isCurrentCard
-              ? "cursor-pointer hover:bg-gray-50 transition-colors duration-200"
-              : "cursor-default"
-          }
-          onClick={(e) => {
-            if (isCurrentCard) {
-              e.stopPropagation(); // Prevent potential drag issues
-              handleContentClick(content[activeSection]);
-            }
-          }}
-        >
-           {renderContentDisplay(content[activeSection])}
-           {isCurrentCard && (
-              <div className="mt-2 text-blue-500 text-sm flex items-center">
-                <span>点击查看全文</span>
-                <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-            )}
-        </div>
+        {sectionContent ? (
+            <div
+              className={
+                isCurrentCard
+                  ? "cursor-pointer hover:bg-gray-50 transition-colors duration-200"
+                  : "cursor-default"
+              }
+              onClick={(e) => {
+                if (isCurrentCard && sectionContent) { // Ensure sectionContent exists
+                  e.stopPropagation(); // Prevent potential drag issues
+                  handleContentClick(sectionContent);
+                }
+              }}
+            >
+               {renderContentDisplay(sectionContent)}
+               {/* 只有当前卡片显示"查看全文" */}
+               {isCurrentCard && (
+                 <div className="text-blue-600 hover:underline mt-4 inline-block">查看全文 &rarr;</div>
+               )}
+            </div>
+        ) : (
+             <p>加载中...</p> // Or a specific error message if content is null/undefined
+        )}
+
       </div>
     );
   };
 
-  // Show loading state
   if (loading) {
-    return <div className="flex justify-center items-center min-h-screen">加载中...</div>;
+    return <div className="flex justify-center items-center min-h-screen text-xl">加载中...</div>;
   }
 
-  // Show error state
   if (!dailyData) {
-    return <div className="flex justify-center items-center min-h-screen text-red-500">加载内容失败！</div>;
+      return <div className="flex justify-center items-center min-h-screen text-xl text-red-500">加载内容失败。</div>;
   }
 
-  // Render content once data is loaded
   return (
-    <div className="flex flex-col min-h-screen bg-gray-100 relative">
-      {/* 顶部按钮组 */}
-      <div className="flex justify-center space-x-4 p-2 absolute top-4 left-0 right-0 z-10">
-        <div className="bg-white/80 backdrop-blur-md rounded-full shadow-lg px-4 py-2 flex space-x-2">
-          <button
-            className={`px-4 py-1 rounded-full transition-all duration-200 ${
-              activeSection === 'review'
-                ? 'bg-blue-500 text-white shadow-md'
-                : 'text-gray-800 hover:bg-gray-100'
-            }`}
-            onClick={() => setActiveSection('review')}
-          >
-            文学评论
-          </button>
-          <button
-            className={`px-4 py-1 rounded-full transition-all duration-200 ${
-              activeSection === 'concept'
-                ? 'bg-blue-500 text-white shadow-md'
-                : 'text-gray-800 hover:bg-gray-100'
-            }`}
-            onClick={() => setActiveSection('concept')}
-          >
-            概念解释
-          </button>
-          <button
-            className={`px-4 py-1 rounded-full transition-all duration-200 ${
-              activeSection === 'question'
-                ? 'bg-blue-500 text-white shadow-md'
-                : 'text-gray-800 hover:bg-gray-100'
-            }`}
-            onClick={() => setActiveSection('question')}
-          >
-            考研题目
-          </button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4 overflow-hidden"> {/* Added overflow-hidden */}
+      <header className="w-full max-w-4xl mx-auto text-center py-8">
+        <h1 className="text-4xl font-extrabold text-gray-800 mb-4">文学助手</h1>
+        <p className="text-xl text-gray-600">每日为你呈现精选文学内容</p>
+      </header>
 
-      {/* 主要内容区域 */}
-      <main className="flex-grow flex items-center justify-center p-4 overflow-hidden relative mt-20">
-        {/* 卡片容器 - 使用flex布局 */} {/* Removed fixed width here, let flex determine */}
-        {/* Applied transform for centering */} {/* Increased width to ensure cards don't overflow during scaling */}
-        {/* Note: the flex container itself is centered by main. The transform shifts the *contents* of this flex container. */}
+      <main className="flex-grow w-full flex justify-center items-center py-8 overflow-hidden"> {/* Added overflow-hidden */}
         <div
-          ref={cardContainerRef} // Attach ref here
-          className="flex transition-transform duration-500 ease-in-out space-x-8" // Added space-x-8 here
-          style={{ transform: `translateX(${currentTranslateX}px)` }} // Apply dynamic transform
+          ref={cardContainerRef}
+          className="flex cursor-grab active:cursor-grabbing" // Added cursor styles
+          style={{
+            transform: `translateX(${currentTranslateX}px)`,
+            // transition: 'transform 0.3s ease-in-out', // Removed, handled by useEffect
+          }}
         >
+          {/* Yesterday's Card */}
+          {renderDayCard(dailyData.yesterday, false)}
 
-          {/* 昨天的卡片 */}
-          {dailyData.yesterday && renderDayCard(dailyData.yesterday, false)}
-
-          {/* 今天的卡片 */}
-          {dailyData.today && renderDayCard(dailyData.today, true)}
+          {/* Today's Card */}
+          {renderDayCard(dailyData.today, true)}
         </div>
       </main>
 
-      {/* 浮动窗口 */}
-      <DetailModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        content={selectedContent || { title: '', content: '' }}
-      />
+       {/* Floating Button Container with solid white background */}
+      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-20 bg-white rounded-full shadow-lg p-2"> {/* Added bg-white and padding */}
+          <div className="flex space-x-2 md:space-x-4"> {/* Increased spacing for larger screens */}
+              <button
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
+                  activeSection === 'review'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 hover:bg-gray-200'
+                }`}
+                onClick={() => handleTabClick('review')}
+              >
+                文学评论
+              </button>
+              <button
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
+                  activeSection === 'concept'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 hover:bg-gray-200'
+                }`}
+                onClick={() => handleTabClick('concept')}
+              >
+                概念解析
+              </button>
+              <button
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
+                  activeSection === 'question'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 hover:bg-gray-200'
+                }`}
+                onClick={() => handleTabClick('question')}
+              >
+                考研题目
+              </button>
+          </div>
+      </div>
+
+      {/* Render the modal */}
+      {selectedContent && (
+        <DetailModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          content={selectedContent}
+        />
+      )}
     </div>
   );
 }
